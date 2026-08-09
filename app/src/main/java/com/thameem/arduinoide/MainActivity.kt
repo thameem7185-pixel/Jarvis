@@ -9,7 +9,9 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
@@ -19,27 +21,34 @@ import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import java.util.concurrent.Executors
 
+// ==== CHANGE THIS to your GitHub Pages URL (or "file:///android_asset/index.html"
+// if you bundle the IDE locally in app/src/main/assets/) ====
+private const val IDE_URL = "https://thameem7185-pixel.github.io/Arduino_Web_IDE/"
+
 class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
 
     private lateinit var webView: WebView
     private lateinit var usbManager: UsbManager
+
     private var serialPort: UsbSerialPort? = null
     private var ioManager: SerialInputOutputManager? = null
     private val executor = Executors.newSingleThreadExecutor()
 
+    private var pendingBaud: Int = 9600
+    private var pendingConnectCallback: (() -> Unit)? = null
+
     private val ACTION_USB_PERMISSION = "com.thameem.arduinoide.USB_PERMISSION"
 
-    // ============ Permission result receiver ============
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (ACTION_USB_PERMISSION == intent.action) {
                 synchronized(this) {
-                    val device: UsbDevice? =
-                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                        device?.let { openConnection(it) }
+                    val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                    val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                    if (granted && device != null) {
+                        openPort(device, pendingBaud)
                     } else {
-                        notifyJs("onError", "Permission denied for USB device.")
+                        runOnJs("log('error', '✗ USB permission denied.')")
                     }
                 }
             }
@@ -51,16 +60,6 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
         setContentView(R.layout.activity_main)
 
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
-        webView = findViewById(R.id.webview)
-
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.webViewClient = WebViewClient()
-        webView.addJavascriptInterface(UsbBridge(), "AndroidUSB")
-
-        // Loads your existing HTML IDE from the assets folder.
-        // Copy your arduino-web-ide-2.html into app/src/main/assets/index.html
-        webView.loadUrl("file:///android_asset/index.html")
 
         val filter = IntentFilter(ACTION_USB_PERMISSION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -68,105 +67,133 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
         } else {
             registerReceiver(usbReceiver, filter)
         }
+
+        webView = findViewById(R.id.webview)
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        webView.settings.allowFileAccess = true
+        webView.webChromeClient = WebChromeClient()
+        webView.webViewClient = WebViewClient()
+        webView.addJavascriptInterface(SerialBridge(), "AndroidSerial")
+        webView.loadUrl(IDE_URL)
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        closeConnection()
-        try { unregisterReceiver(usbReceiver) } catch (_: Exception) {}
-    }
-
-    // ============ Called from JavaScript (window.AndroidUSB.xxx) ============
-    inner class UsbBridge {
+    // ===================== JS <-> Native bridge =====================
+    inner class SerialBridge {
 
         @JavascriptInterface
-        fun requestConnection() {
+        fun connect(baudRate: Int): Boolean {
+            pendingBaud = baudRate
+
             val drivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
             if (drivers.isEmpty()) {
-                notifyJs("onError", "No USB serial device found. Check the cable and OTG.")
-                return
+                runOnJs("log('error', '✗ No compatible USB serial device found. Check the cable and that USB debugging/OTG is enabled.')")
+                return false
             }
+
             val driver: UsbSerialDriver = drivers[0]
             val device = driver.device
 
-            if (usbManager.hasPermission(device)) {
-                openConnection(device)
-            } else {
-                val pendingIntent = PendingIntent.getBroadcast(
-                    this@MainActivity, 0, Intent(ACTION_USB_PERMISSION),
-                    PendingIntent.FLAG_MUTABLE
+            if (!usbManager.hasPermission(device)) {
+                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                    PendingIntent.FLAG_MUTABLE else 0
+                val permissionIntent = PendingIntent.getBroadcast(
+                    this@MainActivity, 0, Intent(ACTION_USB_PERMISSION), flags
                 )
-                usbManager.requestPermission(device, pendingIntent)
+                usbManager.requestPermission(device, permissionIntent)
+                // Result arrives asynchronously in usbReceiver -> openPort()
+                return true
             }
+
+            return openPort(device, baudRate)
+        }
+
+        @JavascriptInterface
+        fun disconnect() {
+            try {
+                ioManager?.stop()
+                serialPort?.close()
+            } catch (e: Exception) {
+                Log.e("ArduinoIDE", "disconnect error", e)
+            }
+            ioManager = null
+            serialPort = null
         }
 
         @JavascriptInterface
         fun write(data: String) {
             try {
-                serialPort?.write(data.toByteArray(), 1000)
+                serialPort?.write(data.toByteArray(Charsets.UTF_8), 1000)
             } catch (e: Exception) {
-                notifyJs("onError", "Write failed: ${e.message}")
+                runOnJs("log('error', 'Write failed: ${e.message}')")
             }
-        }
-
-        @JavascriptInterface
-        fun disconnect() {
-            closeConnection()
         }
     }
 
-    // ============ Connection handling ============
-    private fun openConnection(device: UsbDevice) {
-        val drivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
-        val driver = drivers.firstOrNull { it.device.deviceId == device.deviceId } ?: return
+    private fun openPort(device: UsbDevice, baudRate: Int): Boolean {
+        val driver = UsbSerialProber.getDefaultProber().probeDevice(device)
+            ?: UsbSerialProber.getDefaultProber().findAllDrivers(usbManager).firstOrNull { it.device == device }
+        if (driver == null) {
+            runOnJs("log('error', '✗ Could not match a driver to this USB device.')")
+            return false
+        }
 
         val connection = usbManager.openDevice(driver.device)
         if (connection == null) {
-            notifyJs("onError", "Failed to open USB device connection.")
-            return
+            runOnJs("log('error', '✗ Failed to open USB connection (permission issue?).')")
+            return false
         }
 
         val port = driver.ports[0]
         try {
             port.open(connection)
-            port.setParameters(9600, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
-            serialPort = port
-
-            ioManager = SerialInputOutputManager(port, this)
-            executor.submit(ioManager)
-
-            notifyJs("onConnected", "")
+            port.setParameters(baudRate, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
         } catch (e: Exception) {
-            notifyJs("onError", "Failed to open port: ${e.message}")
+            runOnJs("log('error', 'Failed to open port: ${e.message}')")
+            return false
         }
-    }
 
-    private fun closeConnection() {
-        try {
-            ioManager?.stop()
-            serialPort?.close()
-        } catch (_: Exception) {}
-        serialPort = null
-        ioManager = null
-    }
+        serialPort = port
+        ioManager = SerialInputOutputManager(port, this).also { executor.submit(it) }
 
-    // ============ Incoming data from Arduino -> pushed into JS ============
-    override fun onNewData(data: ByteArray) {
-        val text = String(data)
-        val escaped = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
         runOnUiThread {
-            webView.evaluateJavascript("window.onAndroidUsbData && window.onAndroidUsbData('$escaped');", null)
+            webView.evaluateJavascript(
+                "state.connected = true; setConnectedUI(true); log('success', '✓ Connected via native USB bridge!');",
+                null
+            )
         }
+        return true
+    }
+
+    // SerialInputOutputManager.Listener — runs on the executor thread
+    override fun onNewData(data: ByteArray) {
+        val text = String(data, Charsets.UTF_8)
+        runOnJs("onNativeSerialData(${jsStringLiteral(text)})")
     }
 
     override fun onRunError(e: Exception) {
-        notifyJs("onError", "Connection lost: ${e.message}")
+        runOnJs("log('error', 'Serial connection lost: ${e.message}')")
     }
 
-    private fun notifyJs(fn: String, message: String) {
-        val safeMsg = message.replace("'", "\\'")
-        runOnUiThread {
-            webView.evaluateJavascript("window.$fn && window.$fn('$safeMsg');", null)
-        }
+    private fun runOnJs(js: String) {
+        runOnUiThread { webView.evaluateJavascript(js, null) }
+    }
+
+    private fun jsStringLiteral(s: String): String {
+        // Safely embed arbitrary serial text as a JS string literal
+        val escaped = s.replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        return "'$escaped'"
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            ioManager?.stop()
+            serialPort?.close()
+            unregisterReceiver(usbReceiver)
+        } catch (_: Exception) {}
     }
 }
