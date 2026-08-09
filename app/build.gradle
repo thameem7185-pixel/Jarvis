@@ -32,8 +32,5 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
-
-    // Handles CH340, FTDI, CP2102, CDC-ACM chips over Android's UsbManager —
-    // this is what actually talks to the Arduino Uno, bypassing Web Serial.
     implementation 'com.github.mik3y:usb-serial-for-android:3.7.0'
 }
