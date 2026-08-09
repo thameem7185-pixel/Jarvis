@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.thameem.arduinoide'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.thameem.arduinoide"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+
+    // This is the key library — handles CH340, FTDI, CP2102, CDC-ACM chips
+    // directly over Android's UsbManager, bypassing WebView/Chrome entirely.
+    implementation 'com.github.mik3y:usb-serial-for-android:3.7.0'
+}
