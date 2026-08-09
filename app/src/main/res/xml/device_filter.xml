@@ -1,20 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Arduino Uno (ATmega16u2/8u2 CDC-ACM) -->
-    <usb-device vendor-id="9025" product-id="67" />   <!-- 0x2341 / 0x0043 -->
-    <usb-device vendor-id="9025" product-id="1" />    <!-- 0x2341 / 0x0001 -->
-    <usb-device vendor-id="9025" product-id="16" />   <!-- 0x2341 / 0x0010 -->
-
-    <!-- CH340 / CH341 (common clone boards) -->
-    <usb-device vendor-id="6790" product-id="29987" /> <!-- 0x1A86 / 0x7523 -->
-    <usb-device vendor-id="6790" product-id="21795" /> <!-- 0x1A86 / 0x5523 -->
-
-    <!-- FTDI FT232 -->
-    <usb-device vendor-id="1027" product-id="24577" /> <!-- 0x0403 / 0x6001 -->
-
-    <!-- Silicon Labs CP2102/CP2109 -->
-    <usb-device vendor-id="4292" product-id="60000" /> <!-- 0x10C4 / 0xEA60 -->
-
-    <!-- Prolific PL2303 -->
-    <usb-device vendor-id="1659" product-id="8963" />  <!-- 0x067B / 0x2303 -->
+    <usb-device vendor-id="9025" product-id="67" />
+    <usb-device vendor-id="9025" product-id="1" />
+    <usb-device vendor-id="9025" product-id="16" />
+    <usb-device vendor-id="6790" product-id="29987" />
+    <usb-device vendor-id="6790" product-id="21795" />
+    <usb-device vendor-id="1027" product-id="24577" />
+    <usb-device vendor-id="4292" product-id="60000" />
+    <usb-device vendor-id="1659" product-id="8963" />
 </resources>
