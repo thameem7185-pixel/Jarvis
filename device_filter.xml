@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Official Arduino (Uno R3, Mega, etc.) -->
+    <usb-device vendor-id="9025" />       <!-- 0x2341 -->
+    <!-- CH340 chip — most budget/clone Arduino Unos -->
+    <usb-device vendor-id="6790" />       <!-- 0x1A86 -->
+    <!-- FTDI chip — some Nano/older boards -->
+    <usb-device vendor-id="1027" />       <!-- 0x0403 -->
+    <!-- CP2102 — some Nano clones -->
+    <usb-device vendor-id="4292" />       <!-- 0x10C4 -->
+</resources>
