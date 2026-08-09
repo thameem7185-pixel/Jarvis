@@ -2,31 +2,33 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
-        android:label="Arduino USB Bridge"
-        android:theme="@android:style/Theme.NoTitleBar">
+        android:icon="@mipmap/ic_launcher"
+        android:label="Arduino Web IDE"
+        android:theme="@style/Theme.ArduinoIDE"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize">
-
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- This makes Android launch your app automatically when an
-                 Arduino/USB-serial device is plugged in via OTG -->
+            <!-- Lets the OS auto-launch this app when an Arduino/USB-serial
+                 device is plugged in, and lets us grab the granted permission -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
             <meta-data
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/device_filter" />
-
         </activity>
     </application>
 </manifest>
